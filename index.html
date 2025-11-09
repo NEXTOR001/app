@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#FFFFFF">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>AI Assistant</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="AI Assistant">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+</head>
+<body>
+    <!-- API Key Setup Screen -->
+    <div id="setupScreen" class="login-screen">
+        <div class="login-container">
+            <div class="login-card">
+                <div class="logo-container">
+                    <div class="logo-circle">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2"/>
+                            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                    </div>
+                </div>
+                <h1>AI Assistant</h1>
+                <p class="subtitle">Введите API ключ для начала работы</p>
+                <form id="setupForm" class="login-form">
+                    <div class="input-group">
+                        <input type="password" id="apiKeyInput" placeholder="API ключ от GPTunnel" required>
+                        <input type="url" id="apiUrlInput" placeholder="API URL (опционально)" value="https://gptunnel.ru/v1">
+                        <button type="submit" class="btn-primary">
+                            <span>Сохранить и начать</span>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="setupError" class="error-message"></div>
+                    <div class="setup-hint">
+                        API ключ будет сохранен локально в вашем браузере
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="mainApp" class="main-app">
+        <header class="app-header">
+            <div class="header-content">
+                <button class="menu-btn" id="menuBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <path d="M3 12H21M3 6H21M3 18H21" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+                <div class="model-selector">
+                    <select id="modelSelect" class="model-dropdown"></select>
+                </div>
+                <button class="settings-btn" id="settingsBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/>
+                        <path d="M12 1V6M12 18V23M4.22 4.22L7.76 7.76M16.24 16.24L19.78 19.78M1 12H6M18 12H23M4.22 19.78L7.76 16.24M16.24 7.76L19.78 4.22" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>История чатов</h2>
+                <button class="new-chat-btn" id="newChatBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    Новый чат
+                </button>
+            </div>
+            <div class="chat-history" id="chatHistory"></div>
+            <div class="sidebar-footer">
+                <button class="api-key-btn" id="changeApiKeyBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M15.7 7.3L18 9.6M9 3H7C5.11438 3 4.17157 3 3.58579 3.58579C3 4.17157 3 5.11438 3 7V9C3 10.8856 3 11.8284 3.58579 12.4142C4.17157 13 5.11438 13 7 13H9C10.8856 13 11.8284 13 12.4142 12.4142C13 11.8284 13 10.8856 13 9V7C13 5.11438 13 4.17157 12.4142 3.58579C11.8284 3 10.8856 3 9 3Z" stroke="currentColor" stroke-width="2"/>
+                        <path d="M15 11V13C15 14.8856 15 15.8284 15.5858 16.4142C16.1716 17 17.1144 17 19 17C20.8856 17 21.8284 17 22.4142 16.4142C23 15.8284 23 14.8856 23 13C23 11.1144 23 10.1716 22.4142 9.58579C21.8284 9 20.8856 9 19 9C17.1144 9 16.1716 9 15.5858 9.58579C15 10.1716 15 11.1144 15 13Z" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    Изменить API ключ
+                </button>
+                <button class="clear-data-btn" id="clearDataBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                        <path d="M3 6H21M8 6V4C8 3.44772 8.44772 3 9 3H15C15.5523 3 16 3.44772 16 4V6M10 11V17M14 11V17M4 6L5 19C5 20.1046 5.89543 21 7 21H17C18.1046 21 19 20.1046 19 19L20 6" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    Очистить данные
+                </button>
+            </div>
+        </aside>
+
+        <!-- Settings Modal -->
+        <div class="modal" id="settingsModal">
+            <div class="modal-overlay" id="closeSettings"></div>
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h2>Настройки</h2>
+                    <button class="modal-close" id="closeSettingsBtn">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-group" id="temperatureGroup">
+                        <label for="temperature">Температура (креативность)</label>
+                        <div class="slider-container">
+                            <input type="range" id="temperature" min="0" max="20" value="7" class="slider">
+                            <span id="tempValue" class="slider-value">0.7</span>
+                        </div>
+                    </div>
+                
+                    <div class="setting-group" id="topPGroup">
+                        <label for="topP">Top-P (разнообразие выбора)</label>
+                        <div class="slider-container">
+                            <input type="range" id="topP" min="0" max="100" value="90" class="slider">
+                            <span id="topPValue" class="slider-value">0.90</span>
+                        </div>
+                    </div>
+                
+                    <div class="setting-group">
+                        <label for="systemPromptPreset">Системная инструкция</label>
+                        <select id="systemPromptPreset" class="setting-select">
+                            <option value="default">По умолчанию</option>
+                            <option value="creative">Креативный помощник</option>
+                            <option value="technical">Технический эксперт</option>
+                            <option value="tutor">Преподаватель</option>
+                            <option value="custom">Пользовательская</option>
+                        </select>
+                        <textarea id="systemPromptText" class="setting-textarea" placeholder="Введите системную инструкцию..." disabled></textarea>
+                    </div>
+                
+                    <button class="btn-primary save-settings" id="saveSettings">
+                        Сохранить настройки
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <main class="chat-container">
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <div class="welcome-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="1.5"/>
+                            <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="1.5"/>
+                        </svg>
+                    </div>
+                    <h2>Добро пожаловать!</h2>
+                    <p>Выберите модель и начните диалог с AI ассистентом</p>
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <div class="input-container">
+                    <div class="file-preview" id="filePreview"></div>
+                    <div class="input-wrapper">
+                        <button class="attach-btn" id="attachBtn">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M21.44 11.05L12.25 20.24C11.1237 21.3663 9.59723 22.0013 8.00502 22.0013C6.4128 22.0013 4.88636 21.3663 3.76002 20.24C2.63369 19.1137 1.99866 17.5872 1.99866 15.995C1.99866 14.4028 2.63369 12.8763 3.76002 11.75L12.95 2.56C13.6451 1.86494 14.5862 1.46869 15.57 1.46869C16.5537 1.46869 17.4949 1.86494 18.19 2.56C18.8851 3.25506 19.2813 4.19623 19.2813 5.18C19.2813 6.16377 18.8851 7.10494 18.19 7.8L8.95002 17C8.60252 17.3475 8.12196 17.5431 7.62002 17.5431C7.11809 17.5431 6.63753 17.3475 6.29002 17C5.94252 16.6525 5.74691 16.1719 5.74691 15.67C5.74691 15.1681 5.94252 14.6875 6.29002 14.34L14.78 5.86" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <input type="file" id="fileInput" accept="image/*,.pdf,.txt,.doc,.docx" multiple hidden>
+                        </button>
+                        <textarea 
+                            id="messageInput" 
+                            class="message-input" 
+                            placeholder="Введите сообщение..."
+                            rows="1"
+                        ></textarea>
+                        <button class="send-btn" id="sendBtn" disabled>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                <path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <div id="notificationContainer" class="notification-container"></div>
+    <script src="js/app.js"></script>
+</body>
+</html>
