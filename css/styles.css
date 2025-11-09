@@ -1838,38 +1838,137 @@ body {
         --header-height: 64px;
         --sidebar-width: 300px;
         --input-max-width: 100%;
+        --max-content-width: 100%; /* Расширяем на весь экран */
     }
     
     .model-selector {
         max-width: none;
     }
     
+    /* Уменьшаем отступы для большего пространства */
     .messages-container {
-        padding: var(--spacing-lg);
+        padding: var(--spacing-md) var(--spacing-sm);
     }
     
+    /* Убираем ограничение ширины и уменьшаем отступы для сообщений */
+    .message {
+        padding: var(--spacing-sm);
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    .message-content {
+        max-width: 100%; /* Используем всю доступную ширину */
+    }
+    
+    /* Уменьшаем размер аватара для экономии места */
+    .message-avatar {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    /* Статистика в 2 строки вместо списка */
+    .message-usage {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+    }
+    
+    .message-usage span {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+    
+    /* Оптимизация области ввода */
     .input-area {
-        padding: var(--spacing-md);
+        padding: var(--spacing-sm);
     }
     
     .input-wrapper {
         border-radius: var(--radius-lg);
-        padding: var(--spacing-md);
+        padding: var(--spacing-sm);
+        border-width: 2px;
+    }
+    
+    /* Уменьшаем кнопки в области ввода */
+    .attach-btn,
+    .send-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
     }
     
     .file-item {
-        width: 120px;
-        height: 120px;
+        width: 100px;
+        height: 100px;
     }
     
+    /* Оптимизация модального окна */
     .modal-container {
         border-radius: var(--radius-xl) var(--radius-xl) 0 0;
         max-height: 90vh;
     }
     
+    /* Уведомления на всю ширину */
     .notification-container {
         right: var(--spacing-sm);
         left: var(--spacing-sm);
+    }
+    
+    .notification {
+        min-width: auto;
+        width: 100%;
+    }
+    
+    /* Оптимизация welcome сообщения */
+    .welcome-message {
+        padding: var(--spacing-xl);
+    }
+    
+    .welcome-icon {
+        width: 80px;
+        height: 80px;
+        font-size: 40px;
+    }
+    
+    .welcome-message h2 {
+        font-size: 24px;
+    }
+    
+    .welcome-message p {
+        font-size: 15px;
+    }
+}
+
+/* Для очень маленьких экранов */
+@media (max-width: 480px) {
+    /* Еще больше оптимизации для маленьких экранов */
+    .header-content {
+        padding: 0 var(--spacing-sm);
+        gap: var(--spacing-sm);
+    }
+    
+    .menu-btn,
+    .settings-btn {
+        width: 40px;
+        height: 40px;
+    }
+    
+    .model-dropdown {
+        padding: 12px 48px;
+        font-size: 14px;
+    }
+    
+    /* Статистика может быть в одну колонку на очень узких экранах */
+    .message-usage {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    
+    /* Минимальный размер шрифта для читаемости */
+    .message-text {
+        font-size: 15px;
     }
 }
 
@@ -1990,6 +2089,30 @@ body {
     color: #EF4444;
     border-color: #EF4444;
     transform: scale(1.02);
+}
+.install-pwa-btn:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Адаптация для standalone режима */
+@media all and (display-mode: standalone) {
+    .app-header {
+        padding-top: env(safe-area-inset-top);
+    }
+    
+    .sidebar {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    .input-area {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    
+    /* Скрываем кнопку установки в standalone режиме */
+    .install-pwa-btn {
+        display: none !important;
+    }
 }
 /* ========================================
    ПЕЧАТЬ
