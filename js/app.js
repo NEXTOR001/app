@@ -14,7 +14,25 @@ const DEFAULT_CONFIG = {
 
 // Model Configurations
 const MODELS = {
+    // Ассистенты
+    'assistant-ai9507204': {
+        type: 'assistant',
+        assistantCode: 'ai9507204',
+        displayName: 'Claude 4.5 Sonnet',
+        supportStreaming: true,
+        customParams: {'maxContext':20}
+    },
+    'assistant-ai1608255': {
+        type: 'assistant',
+        assistantCode: 'ai1608255',
+        displayName: 'Mega Searcher',
+        supportStreaming: true,
+        customParams: {'maxContext':20}
+    },
+    
+    // Обычные модели
     'gemini-2.5-pro': {
+        type: 'model',
         provider: 'google',
         displayName: 'Gemini 2.5 Pro thinking',
         maxOutputTokens: 32000,
@@ -33,6 +51,7 @@ const MODELS = {
         }
     },
     'gemini-2.5-flash': {
+        type: 'model',
         provider: 'google',
         displayName: 'Gemini 2.5 Flash thinking',
         maxOutputTokens: 32000,
@@ -51,12 +70,13 @@ const MODELS = {
         }
     },
     'gpt-5-high': {
+        type: 'model',
         provider: 'openAI',
         displayName: 'GPT-5 High Reasoning',
         maxOutputTokens: 16000,
         maxContextTokens: 400000,
         supportThinking: true,
-        supportedParams: ['temperature'],
+        supportedParams: [],
         paramNames: {
             maxTokens: 'max_completion_tokens',
             temperature: 'temperature',
@@ -71,12 +91,13 @@ const MODELS = {
         }
     },
     'gpt-5-medium': {
+        type: 'model',
         provider: 'openAI',
         displayName: 'GPT-5 Medium Reasoning',
         maxOutputTokens: 16000,
         maxContextTokens: 400000,
         supportThinking: true,
-        supportedParams: ['temperature'],
+        supportedParams: [],
         paramNames: {
             maxTokens: 'max_completion_tokens',
             temperature: 'temperature',
@@ -105,6 +126,7 @@ const state = {
     },
     attachedFiles: [],
     isProcessingPaste: false,
+    assistantChatIds: {}, // Хранение chatId для каждого ассистента
     lastUsage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -121,6 +143,25 @@ const systemPrompts = {
     tutor: 'You are a patient and knowledgeable tutor. Explain concepts clearly and help users learn effectively.',
     custom: ''
 };
+
+// Utility function to generate chat ID for assistants (similar to Python's random.randint)
+function generateAssistantChatId() {
+    // Генерируем случайное число от 24 до 36 цифр
+    const numDigits = Math.floor(Math.random() * (36 - 24 + 1)) + 24;
+    
+    // Генерируем строку с нужным количеством случайных цифр
+    let result = '';
+    
+    // Первая цифра не должна быть 0
+    result += Math.floor(Math.random() * 9) + 1;
+    
+    // Остальные цифры могут быть любыми от 0 до 9
+    for (let i = 1; i < numDigits; i++) {
+        result += Math.floor(Math.random() * 10);
+    }
+    
+    return result;
+}
 
 // Get API Configuration from localStorage
 function getApiConfig() {
@@ -149,7 +190,6 @@ function clearAllData() {
 
 // Initialize App
 document.addEventListener('DOMContentLoaded', () => {
-    // Replace login screen with setup screen in HTML
     updateHTMLForApiKey();
     initializeApp();
     registerServiceWorker();
@@ -320,6 +360,8 @@ function showMainApp() {
     }
     loadUserSettings();
     renderChatHistory();
+    // Исправление: отображаем сообщения при загрузке страницы
+    renderMessages();
 }
 
 // Service Worker Registration
@@ -357,14 +399,22 @@ function updateModelSettings() {
     
     if (!model) return;
     
+    // Скрываем настройки температуры и topP для ассистентов
     const tempGroup = document.getElementById('temperatureGroup');
-    if (tempGroup) {
-        tempGroup.style.display = model.supportedParams.includes('temperature') ? 'block' : 'none';
-    }
-    
     const topPGroup = document.getElementById('topPGroup');
-    if (topPGroup) {
-        topPGroup.style.display = model.supportedParams.includes('topP') ? 'block' : 'none';
+    
+    if (model.type === 'assistant') {
+        // Для ассистентов скрываем все настройки параметров
+        if (tempGroup) tempGroup.style.display = 'none';
+        if (topPGroup) topPGroup.style.display = 'none';
+    } else {
+        // Для обычных моделей показываем в зависимости от поддержки
+        if (tempGroup) {
+            tempGroup.style.display = model.supportedParams?.includes('temperature') ? 'block' : 'none';
+        }
+        if (topPGroup) {
+            topPGroup.style.display = model.supportedParams?.includes('topP') ? 'block' : 'none';
+        }
     }
 }
 
@@ -662,6 +712,7 @@ function createNewChat() {
         id: chatId,
         title: 'Новый чат',
         messages: [],
+        assistantChatIds: {}, // Сохраняем chatId ассистентов для этого чата
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -669,6 +720,7 @@ function createNewChat() {
     state.chats.unshift(chat);
     state.currentChatId = chatId;
     state.messages = [];
+    state.assistantChatIds = {}; // Очищаем chatId ассистентов для нового чата
     
     saveState();
     renderChatHistory();
@@ -831,14 +883,107 @@ async function callAI(message, files = [], onChunk = null) {
         throw new Error('Model not found');
     }
     
+    // Обработка для ассистентов
+    if (model.type === 'assistant') {
+        return await callAssistantAPI(message, model, onChunk);
+    }
+    
+    // Обработка для обычных моделей
+    return await callModelAPI(message, files, model, onChunk);
+}
+
+async function callAssistantAPI(message, model, onChunk) {
+    const { apiKey, apiUrl } = getApiConfig();
+    
+    // Получаем или генерируем chatId для этого ассистента
+    if (!state.assistantChatIds[model.assistantCode]) {
+        state.assistantChatIds[model.assistantCode] = generateAssistantChatId();
+    }
+    const chatId = state.assistantChatIds[model.assistantCode];
+    
+    const requestBody = {
+        message: message,
+        chatId: chatId,
+        assistantCode: model.assistantCode,
+        stream: true,
+        thinkingMode: true
+    };
+    
+    // Добавляем кастомные параметры если есть
+    if (model.customParams) {
+        Object.assign(requestBody, model.customParams);
+    }
+    
+    console.log('Assistant API Request:', requestBody);
+    
+    const response = await fetch(`${apiUrl}/assistant/chat`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': apiKey // Без Bearer для ассистентов, как в testAPI.py
+        },
+        body: JSON.stringify(requestBody)
+    });
+    
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || errorData.detail || `HTTP error! status: ${response.status}`);
+    }
+    
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let totalContent = '';
+    
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+                
+                try {
+                    const data = JSON.parse(line);
+                    console.log('Assistant response chunk:', data);
+                    
+                    if (data.delta) {
+                        totalContent += data.delta;
+                        if (onChunk) {
+                            onChunk({ content: data.delta });
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Failed to parse assistant response line:', line, e);
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
+    
+    return {
+        content: totalContent,
+        thinking: '',
+        usage: null
+    };
+}
+
+async function callModelAPI(message, files, model, onChunk) {
+    const { apiKey, apiUrl } = getApiConfig();
+    
     const messages = [];
     
+    // Добавляем system prompt
     const systemRole = model.provider === 'google' ? 'developer' : 'system';
     messages.push({
         role: systemRole,
         content: state.settings.systemPrompt
     });
     
+    // Добавляем историю сообщений
     for (let i = 0; i < state.messages.length - 1; i++) {
         const msg = state.messages[i];
         
@@ -877,23 +1022,21 @@ async function callAI(message, files = [], onChunk = null) {
     const requestBody = {
         model: model.provider === 'openAI' && model.supportThinking ? baseModelName : selectedModel,
         messages: messages,
-        stream: true
+        stream: false, // Для обычных моделей отключаем streaming
     };
-    
-    if (model.supportedParams.includes('temperature')) {
+    // Добавляем параметры модели
+    if (model.supportedParams?.includes('temperature')) {
         requestBody[model.paramNames.temperature] = state.settings.temperature;
     }
     
-    if (model.supportedParams.includes('topP') && model.paramNames.topP) {
+    if (model.supportedParams?.includes('topP') && model.paramNames.topP) {
         requestBody[model.paramNames.topP] = state.settings.topP;
     }
     
     if (model.presetParams) {
         Object.assign(requestBody, model.presetParams);
     }
-    
-    console.log('Request:', JSON.stringify(requestBody, null, 2));
-    
+    console.log('Model API Request:', requestBody);
     const response = await fetch(`${apiUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -908,161 +1051,40 @@ async function callAI(message, files = [], onChunk = null) {
         throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
     }
     
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let totalContent = '';
-    let totalThinking = '';
-    let lastUsage = null;
+    const data = await response.json();
+    console.log('Model API Response:', data);
     
-    try {
-        while (true) {
-            const { done, value } = await reader.read();
-            
-            if (done) break;
-            
-            buffer += decoder.decode(value, { stream: true });
-            
-            if (buffer.trim().startsWith('{') && buffer.trim().endsWith('}')) {
-                try {
-                    const fullResponse = JSON.parse(buffer);
-                    console.log('Full response received:', fullResponse);
-                    
-                    if (fullResponse.choices && fullResponse.choices[0]) {
-                        const choice = fullResponse.choices[0];
-                        
-                        if (choice.message) {
-                            if (choice.message.content) {
-                                totalContent = choice.message.content;
-                                if (onChunk) {
-                                    onChunk({ content: choice.message.content });
-                                }
-                            }
-                            
-                            if (choice.message.reasoning) {
-                                console.log('Found reasoning:', choice.message.reasoning);
-                                totalThinking = choice.message.reasoning;
-                                if (onChunk) {
-                                    onChunk({ thinking: choice.message.reasoning });
-                                }
-                            } else if (choice.message.thinking) {
-                                console.log('Found thinking:', choice.message.thinking);
-                                totalThinking = choice.message.thinking;
-                                if (onChunk) {
-                                    onChunk({ thinking: choice.message.thinking });
-                                }
-                            }
-                        }
-                    }
-                    
-                    if (fullResponse.usage) {
-                        if (fullResponse.usage.completion_tokens_details && 
-                            fullResponse.usage.completion_tokens_details.reasoning_tokens) {
-                            fullResponse.usage.thinking_tokens = 
-                                fullResponse.usage.completion_tokens_details.reasoning_tokens;
-                        }
-                        
-                        lastUsage = calculateUsage(fullResponse, model);
-                        if (onChunk) {
-                            onChunk({ usage: lastUsage });
-                        }
-                    }
-                    
-                    buffer = '';
-                    break;
-                    
-                } catch (e) {
-                    console.log('Not a complete JSON, continuing as SSE stream');
-                }
-            }
-            
-            const lines = buffer.split(/\r?\n/);
-            buffer = lines.pop() || '';
-            
-            for (const line of lines) {
-                if (line.trim() === '' || line.trim() === 'data: [DONE]') continue;
-                
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        console.log('SSE data:', data);
-                        
-                        if (data.choices && data.choices[0]) {
-                            const choice = data.choices[0];
-                            
-                            if (choice.delta) {
-                                if (choice.delta.content !== undefined && choice.delta.content !== null) {
-                                    totalContent += choice.delta.content;
-                                    if (onChunk) {
-                                        onChunk({ content: choice.delta.content });
-                                    }
-                                }
-                                
-                                if (choice.delta.thinking !== undefined && choice.delta.thinking !== null) {
-                                    totalThinking += choice.delta.thinking;
-                                    if (onChunk) {
-                                        onChunk({ thinking: choice.delta.thinking });
-                                    }
-                                } else if (choice.delta.reasoning !== undefined && choice.delta.reasoning !== null) {
-                                    totalThinking += choice.delta.reasoning;
-                                    if (onChunk) {
-                                        onChunk({ thinking: choice.delta.reasoning });
-                                    }
-                                }
-                            }
-                            
-                            if (choice.message && !choice.delta) {
-                                if (choice.message.content) {
-                                    totalContent = choice.message.content;
-                                    if (onChunk) {
-                                        onChunk({ content: choice.message.content });
-                                    }
-                                }
-                                
-                                if (choice.message.reasoning) {
-                                    totalThinking = choice.message.reasoning;
-                                    if (onChunk) {
-                                        onChunk({ thinking: choice.message.reasoning });
-                                    }
-                                } else if (choice.message.thinking) {
-                                    totalThinking = choice.message.thinking;
-                                    if (onChunk) {
-                                        onChunk({ thinking: choice.message.thinking });
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if (data.usage) {
-                            if (data.usage.completion_tokens_details && 
-                                data.usage.completion_tokens_details.reasoning_tokens) {
-                                data.usage.thinking_tokens = 
-                                    data.usage.completion_tokens_details.reasoning_tokens;
-                            }
-                            
-                            lastUsage = calculateUsage(data, model);
-                            if (onChunk) {
-                                onChunk({ usage: lastUsage });
-                            }
-                        }
-                    } catch (e) {
-                        console.warn('Failed to parse SSE line:', line, e);
-                    }
-                }
-            }
+    let content = '';
+    let thinking = '';
+    let usage = null;
+    
+    if (data.choices && data.choices[0]) {
+        const choice = data.choices[0];
+        
+        if (choice.message) {
+            content = choice.message.content || '';
+            thinking = choice.message.reasoning || choice.message.thinking || '';
         }
-        
-        console.log('Stream complete. Total content:', totalContent);
-        console.log('Total thinking:', totalThinking);
-        
-    } finally {
-        reader.releaseLock();
+    }
+    
+    if (data.usage) {
+        if (data.usage.completion_tokens_details?.reasoning_tokens) {
+            data.usage.thinking_tokens = data.usage.completion_tokens_details.reasoning_tokens;
+        }
+        usage = calculateUsage(data, model);
+    }
+    
+    // Вызываем onChunk с полным ответом для обычных моделей
+    if (onChunk) {
+        if (thinking) onChunk({ thinking });
+        if (content) onChunk({ content });
+        if (usage) onChunk({ usage });
     }
     
     return {
-        content: totalContent,
-        thinking: totalThinking,
-        usage: lastUsage
+        content,
+        thinking,
+        usage
     };
 }
 
@@ -1073,6 +1095,7 @@ function updateCurrentChat() {
             id: chatId,
             title: 'Новый чат',
             messages: [...state.messages],
+            assistantChatIds: {...state.assistantChatIds},
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -1084,6 +1107,7 @@ function updateCurrentChat() {
     const chat = state.chats.find(c => c.id === state.currentChatId);
     if (chat) {
         chat.messages = [...state.messages];
+        chat.assistantChatIds = {...state.assistantChatIds};
         
         if (!chat.title || chat.title === 'Новый чат') {
             const firstUserMessage = state.messages.find(m => m.role === 'user');
@@ -1104,6 +1128,7 @@ function loadChat(chatId) {
     if (chat) {
         state.currentChatId = chatId;
         state.messages = chat.messages || [];
+        state.assistantChatIds = chat.assistantChatIds || {};
         renderMessages();
         renderChatHistory();
         
@@ -1170,20 +1195,26 @@ function calculateUsage(response, model) {
         
         if (response.usage.thinking_tokens) {
             usage.thinkingTokens = response.usage.thinking_tokens;
-        } else if (response.usage.completion_tokens_details && 
-                   response.usage.completion_tokens_details.reasoning_tokens) {
+        } else if (response.usage.completion_tokens_details?.reasoning_tokens) {
             usage.thinkingTokens = response.usage.completion_tokens_details.reasoning_tokens;
         }
         
-        const inputCost = (usage.inputTokens / 1000) * model.pricing.input;
-        const outputCost = (usage.outputTokens / 1000) * model.pricing.output;
-        usage.cost = inputCost + outputCost;
+        // Для ассистентов не считаем стоимость, так как pricing не определен
+        if (model.pricing) {
+            const inputCost = (usage.inputTokens / 1000) * model.pricing.input;
+            const outputCost = (usage.outputTokens / 1000) * model.pricing.output;
+            usage.cost = inputCost + outputCost;
+        } else {
+            usage.cost = 0;
+        }
     }
     
     return usage;
 }
 
 function showUsageInfo(usage) {
+    if (!usage || usage.cost === 0) return; // Не показываем для ассистентов
+    
     const usageDiv = document.createElement('div');
     usageDiv.className = 'usage-info';
     usageDiv.innerHTML = `
@@ -1457,7 +1488,7 @@ function createMessageElement(msg, index) {
         content.appendChild(textDiv);
     }
     
-    if (msg.usage) {
+    if (msg.usage && msg.usage.cost > 0) {
         const usageDiv = document.createElement('div');
         usageDiv.className = 'message-usage';
         usageDiv.innerHTML = `
@@ -1577,6 +1608,7 @@ function loadState() {
         const chat = state.chats.find(c => c.id === currentChat);
         if (chat) {
             state.messages = chat.messages || [];
+            state.assistantChatIds = chat.assistantChatIds || {};
         }
     }
 }
