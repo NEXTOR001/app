@@ -889,7 +889,7 @@ async function callAI(message, files = [], onChunk = null) {
     }
     
     // Обработка для обычных моделей
-    return await callModelAPI(message, files, model, onChunk);
+    return await callModelAPI(message, files, model, selectedModel, onChunk);
 }
 
 async function callAssistantAPI(message, model, onChunk) {
@@ -971,9 +971,8 @@ async function callAssistantAPI(message, model, onChunk) {
     };
 }
 
-async function callModelAPI(message, files, model, onChunk) {
+async function callModelAPI(message, files, model,selectedModel, onChunk) {
     const { apiKey, apiUrl } = getApiConfig();
-    
     const messages = [];
     
     // Добавляем system prompt
