@@ -5,6 +5,7 @@ const urlsToCache = [
   '/app/css/styles.css',
   '/app/js/app.js',
   '/app/manifest.json',
+  '/app/icons/ic_launcher.png'
 ];
 
 self.addEventListener('install', event => {
@@ -74,3 +75,4 @@ self.addEventListener('fetch', event => {
       })
   );
 });
+
