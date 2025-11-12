@@ -2,8 +2,8 @@
     "name": "AI Assistant",
     "short_name": "AI Chat",
     "description": "Современный AI чат-ассистент с поддержкой Gemini моделей",
-    "start_url": "/",
-    "scope": "/",
+    "start_url": "/app/",
+    "scope": "/app/",
     "display": "standalone",
     "background_color": "#FAF9F7",
     "theme_color": "#D97757",
@@ -76,3 +76,4 @@
     "dir": "ltr",
     "related_applications": []
 }
+
