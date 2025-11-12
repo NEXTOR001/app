@@ -1,15 +1,14 @@
-const CACHE_NAME = 'ai-chat-v1';
+const CACHE_NAME = 'ai-chat-v2';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/css/styles.css',
-  '/js/app.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  '/app/',
+  '/app/index.html',
+  '/app/css/styles.css',
+  '/app/js/app.js',
+  '/app/manifest.json',
+  '/app/icons/icon-192.png',
+  '/app/icons/icon-512.png'
 ];
 
-// Install event
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -21,7 +20,6 @@ self.addEventListener('install', event => {
   );
 });
 
-// Activate event
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -37,7 +35,6 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch event with network-first strategy for API calls
 self.addEventListener('fetch', event => {
   // Skip cross-origin requests
   if (!event.request.url.startsWith(self.location.origin)) {
@@ -72,9 +69,9 @@ self.addEventListener('fetch', event => {
         );
       })
       .catch(() => {
-        // Offline fallback
-        if (event.request.destination === 'document') {
-          return caches.match('/index.html');
+        // Offline fallback for navigation requests
+        if (event.request.mode === 'navigate') {
+          return caches.match('/app/index.html');
         }
       })
   );
