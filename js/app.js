@@ -53,7 +53,7 @@ const MODELS = {
   'google/gemini-2.5-pro': {
     type: 'model',
     displayName: 'Gemini 2.5 Pro',
-    maxTokens: 16000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -62,7 +62,7 @@ const MODELS = {
   'google/gemini-2.5-flash': {
     type: 'model',
     displayName: 'Gemini 2.5 Flash',
-    maxTokens: 16000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -71,7 +71,7 @@ const MODELS = {
   'anthropic/claude-haiku-4.5': {
     type: 'model',
     displayName: 'Claude Haiku 4.5',
-    maxTokens: 16000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -80,7 +80,7 @@ const MODELS = {
   'anthropic/claude-sonnet-4.5': {
     type: 'model',
     displayName: 'Claude Sonnet 4.5',
-    maxTokens: 16000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
