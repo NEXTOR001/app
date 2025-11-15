@@ -16,10 +16,10 @@ const DEFAULT_CONFIG = {
 
 // OpenRouter models with webSearch support
 const MODELS = {
-  'openai/gpt-5': {
+  'openai/gpt-5.1': {
     type: 'model',
-    displayName: 'GPT-5',
-    maxTokens: 16000,
+    displayName: 'GPT-5.1',
+    maxTokens: 32000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -31,6 +31,24 @@ const MODELS = {
     maxTokens: 16000,
     supportStreaming: true,
     supportWebSearch: true,
+    pricing: { input: 0.0005, output: 0.0015 }
+  },
+  'openai/gpt-5-image': {
+    type: 'model',
+    displayName: 'GPT-5 Image',
+    maxTokens: 16000,
+    supportStreaming: false,
+    supportWebSearch: false,
+    unsupported_params: ['temperature', 'top_p'],
+    pricing: { input: 0.0005, output: 0.0015 }
+  },
+    'google/gemini-2.5-flash-image-preview': {
+    type: 'model',
+    displayName: 'Nano Banana Image',
+    maxTokens: 16000,
+    supportStreaming: false,
+    supportWebSearch: false,
+    unsupported_params: ['temperature', 'top_p'],
     pricing: { input: 0.0005, output: 0.0015 }
   },
   'openai/chatgpt-4o-latest': {
@@ -554,15 +572,19 @@ class AIService {
     state.currentStreamController = new AbortController();
 
     const messages = this.buildMessages(message, files);
-
     const requestBody = {
       model: selectedModel,
       messages,
       stream: true,
-      temperature: state.settings.temperature,
-      top_p: state.settings.topP,
       max_tokens: state.settings.maxTokens || model.maxTokens || 2048
     };
+    if (!model.unsupported_params || !model.unsupported_params.includes('top_p')) {
+      requestBody.top_p = state.settings.topP;
+    }
+    if (!model.unsupported_params || !model.unsupported_params.includes('temperature')) {
+      requestBody.temperature = state.settings.temperature;
+    }
+    
 
     if (model.supportReasoning) {
       requestBody.reasoning = {effort:"high"}
@@ -599,11 +621,12 @@ class AIService {
     return this.processStream(response, onChunk, model, streamingRenderer);
   }
 
-  static async processStream(response, onChunk, model, streamingRenderer) {
+    static async processStream(response, onChunk, model, streamingRenderer) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let totalContent = '';
     let buffer = '';
+    let images = []; // Добавляем массив для изображений
 
     try {
       while (true) {
@@ -622,16 +645,32 @@ class AIService {
             try {
               const data = JSON.parse(line.slice(6));
               
+              // Обработка текстового контента
               if (data.choices?.[0]?.delta?.content) {
                 const chunk = data.choices[0].delta.content;
                 totalContent += chunk;
                 
-                // Update streaming renderer
                 if (streamingRenderer) {
                   streamingRenderer.addChunk(chunk);
                 }
                 
                 onChunk?.({ content: chunk, totalContent });
+              }
+
+              // Обработка изображений
+              if (data.choices?.[0]?.delta?.images) {
+                const deltaImages = data.choices[0].delta.images;
+                deltaImages.forEach(img => {
+                  if (img.image_url?.url) {
+                    images.push({
+                      type: 'generated',
+                      url: img.image_url.url,
+                      index: img.index || images.length
+                    });
+                  }
+                });
+                
+                onChunk?.({ images: deltaImages, totalImages: images });
               }
 
               // Handle finish reason and usage
@@ -642,7 +681,7 @@ class AIService {
                 
                 if (data.usage) {
                   const usage = this.calculateUsage(data, model);
-                  onChunk?.({ usage, finished: true });
+                  onChunk?.({ usage, finished: true, finalImages: images });
                 }
               }
             } catch (e) {
@@ -652,7 +691,6 @@ class AIService {
         }
       }
       
-      // Finalize streaming
       if (streamingRenderer) {
         streamingRenderer.finalize();
       }
@@ -663,7 +701,7 @@ class AIService {
       state.currentStreamingRenderer = null;
     }
 
-    return { content: totalContent, usage: null };
+    return { content: totalContent, images: images, usage: null };
   }
 
   static calculateUsage(response, model) {
@@ -1050,6 +1088,7 @@ class ChatManager {
     const assistantMessage = {
       role: 'assistant',
       content: '',
+      images: [], // Добавляем массив для изображений
       timestamp: new Date().toISOString(),
       isStreaming: true
     };
@@ -1064,34 +1103,48 @@ class ChatManager {
     container.appendChild(messageElement);
     container.scrollTop = container.scrollHeight;
 
-    // Get the content div for streaming
     const contentDiv = messageElement.querySelector('.message-text');
     
     try {
       await AIService.call(message, state.attachedFiles, (chunk) => {
         if (chunk.content) {
-          // Update state
           state.messages[assistantIndex].content += chunk.content;
         }
         
+        // Обработка изображений
+        if (chunk.images) {
+          chunk.images.forEach(img => {
+            if (img.image_url?.url) {
+              state.messages[assistantIndex].images.push(img.image_url.url);
+              
+              // Добавляем изображение в UI сразу
+              const imagesContainer = messageElement.querySelector('.message-images') || 
+                                     UIManager.createImagesContainer(messageElement);
+              UIManager.addImageToContainer(imagesContainer, img.image_url.url);
+            }
+          });
+        }
+        
         if (chunk.finished) {
-          // Streaming finished
           state.messages[assistantIndex].isStreaming = false;
+          
+          // Сохраняем финальные изображения
+          if (chunk.finalImages) {
+            state.messages[assistantIndex].images = chunk.finalImages.map(img => img.url);
+          }
         }
         
         if (chunk.usage) {
           state.messages[assistantIndex].usage = chunk.usage;
-          // Add usage info
           const usageDiv = UIManager.createUsageBlock(chunk.usage);
           messageElement.querySelector('.message-content').appendChild(usageDiv);
         }
-      }, contentDiv); // Pass element for streaming
+      }, contentDiv);
 
       state.messages[assistantIndex].isStreaming = false;
       this.updateCurrent();
       state.save();
       
-      // Add action buttons after streaming
       const actions = UIManager.createMessageActions(assistantMessage, assistantIndex);
       messageElement.querySelector('.message-content').appendChild(actions);
 
@@ -1136,6 +1189,47 @@ class ChatManager {
 // ============================================
 
 class UIManager {
+    static createImagesContainer(messageElement) {
+    const imagesDiv = document.createElement('div');
+    imagesDiv.className = 'message-images';
+    const contentDiv = messageElement.querySelector('.message-content');
+    const textDiv = messageElement.querySelector('.message-text');
+    
+    // Вставляем контейнер для изображений после текста
+    contentDiv.insertBefore(imagesDiv, textDiv.nextSibling);
+    
+    return imagesDiv;
+  }
+
+  static addImageToContainer(container, imageUrl) {
+    const imageWrapper = document.createElement('div');
+    imageWrapper.className = 'generated-image-wrapper';
+    imageWrapper.innerHTML = `
+      <img src="${imageUrl}" 
+           alt="Generated image" 
+           class="generated-image" 
+           onclick="UIManager.openImageModal('${imageUrl.replace(/'/g, "\\'")}')"
+           loading="lazy">
+      <button class="download-image-btn" onclick="UIManager.downloadImage('${imageUrl.replace(/'/g, "\\'")}', 'generated-image.png')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path d="M21 15V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19V15" stroke="currentColor" stroke-width="2"/>
+          <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2"/>
+          <path d="M12 15V3" stroke="currentColor" stroke-width="2"/>
+        </svg>
+      </button>
+    `;
+    container.appendChild(imageWrapper);
+  }
+
+  static downloadImage(dataUrl, fileName) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    NotificationManager.success('Изображение загружено');
+  }
   static renderMessages() {
     const container = document.getElementById('messagesContainer');
     
@@ -1295,7 +1389,32 @@ class UIManager {
       const usageDiv = this.createUsageBlock(msg.usage);
       content.appendChild(usageDiv);
     }
-
+    if (msg.role === 'assistant' && msg.images?.length) {
+      const imagesDiv = document.createElement('div');
+      imagesDiv.className = 'message-images';
+      
+      msg.images.forEach(imageUrl => {
+        const imageWrapper = document.createElement('div');
+        imageWrapper.className = 'generated-image-wrapper';
+        imageWrapper.innerHTML = `
+          <img src="${imageUrl}" 
+               alt="Generated image" 
+               class="generated-image" 
+               onclick="UIManager.openImageModal('${imageUrl.replace(/'/g, "\\'")}')"
+               loading="lazy">
+          <button class="download-image-btn" onclick="UIManager.downloadImage('${imageUrl.replace(/'/g, "\\'")}', 'generated-image-${Date.now()}.png')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M21 15V19C21 20.1046 20.1046 21 19 21H5C3.89543 21 3 20.1046 3 19V15" stroke="currentColor" stroke-width="2"/>
+              <path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2"/>
+              <path d="M12 15V3" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </button>
+        `;
+        imagesDiv.appendChild(imageWrapper);
+      });
+      
+      content.appendChild(imagesDiv);
+    }
     messageDiv.appendChild(avatar);
     messageDiv.appendChild(content);
 
@@ -1455,7 +1574,7 @@ class SettingsManager {
         this.updateWebSearchAvailability();
       });
     }
-  }
+  } 
 
   static addWebSearchToggle() {
     const settingsContent = document.querySelector('.settings-content');
