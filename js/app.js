@@ -722,22 +722,64 @@ class AIService {
     return usage;
   }
 
-  static buildMessages(message, files) {
-    const messages = [];
+static buildMessages(message, files) {
+  const messages = [];
 
-    messages.push({
-      role: 'system',
-      content: state.settings.systemPrompt
-    });
+  messages.push({
+    role: 'system',
+    content: state.settings.systemPrompt
+  });
 
-    // Add message history
-    for (let i = 0; i < state.messages.length - 1; i++) {
-      const msg = state.messages[i];
+  // Add message history
+  for (let i = 0; i < state.messages.length - 1; i++) {
+    const msg = state.messages[i];
 
-      if (msg.role === 'user') {
+    if (msg.role === 'user') {
+      // Проверяем, есть ли изображения в файлах
+      const hasImages = msg.files?.some(file => file.type === 'image');
+      
+      if (hasImages) {
+        // Формируем контент с изображениями
+        const content = [];
+        
+        // Добавляем текст сообщения
+        if (msg.content) {
+          content.push({ type: 'text', text: msg.content });
+        }
+        
+        // Добавляем текстовые файлы к тексту
+        const textFiles = msg.files.filter(file => file.type === 'text');
+        if (textFiles.length) {
+          let additionalText = '';
+          textFiles.forEach(file => {
+            additionalText += `\n\n[File: ${file.name}]\n${file.content}`;
+          });
+          if (additionalText) {
+            content[0] = { 
+              type: 'text', 
+              text: (content[0]?.text || '') + additionalText 
+            };
+          }
+        }
+        
+        // Добавляем изображения
+        msg.files.forEach(file => {
+          if (file.type === 'image') {
+            content.push({
+              type: 'image_url',
+              image_url: { url: file.data }
+            });
+          }
+        });
+        
+        messages.push({
+          role: 'user',
+          content: content
+        });
+      } else {
+        // Если нет изображений, обрабатываем как обычно
         let content = msg.content || '';
-
-        // Add file contents to the message
+        
         if (msg.files?.length) {
           msg.files.forEach(file => {
             if (file.type === 'text') {
@@ -745,21 +787,86 @@ class AIService {
             }
           });
         }
-
+        
         messages.push({
           role: 'user',
           content: content
         });
-      } else if (msg.role === 'assistant' && msg.content) {
-        messages.push({
-          role: 'assistant',
-          content: msg.content
-        });
+      }
+    } else if (msg.role === 'assistant' && msg.content) {
+      messages.push({
+        role: 'assistant',
+        content: msg.content
+      });
+    }
+  }
+
+  // Добавляем текущее сообщение с прикрепленными файлами
+  const hasCurrentImages = files?.some(file => file.type === 'image');
+  
+  if (hasCurrentImages) {
+    const content = [];
+    
+    // Добавляем текст сообщения
+    if (message) {
+      content.push({ type: 'text', text: message });
+    }
+    
+    // Добавляем текстовые файлы
+    const textFiles = files.filter(file => file.type === 'text');
+    if (textFiles.length) {
+      let additionalText = '';
+      textFiles.forEach(file => {
+        additionalText += `\n\n[File: ${file.name}]\n${file.content}`;
+      });
+      if (additionalText) {
+        if (content.length > 0) {
+          content[0] = { 
+            type: 'text', 
+            text: content[0].text + additionalText 
+          };
+        } else {
+          content.push({ type: 'text', text: additionalText });
+        }
       }
     }
-
-    return messages;
+    
+    // Добавляем изображения
+    files.forEach(file => {
+      if (file.type === 'image') {
+        content.push({
+          type: 'image_url',
+          image_url: { url: file.data }
+        });
+      }
+    });
+    
+    messages.push({
+      role: 'user',
+      content: content
+    });
+  } else if (message || files?.length) {
+    // Если нет изображений, обрабатываем как текстовое сообщение
+    let content = message || '';
+    
+    if (files?.length) {
+      files.forEach(file => {
+        if (file.type === 'text') {
+          content += `\n\n[File: ${file.name}]\n${file.content}`;
+        }
+      });
+    }
+    
+    if (content) {
+      messages.push({
+        role: 'user',
+        content: content
+      });
+    }
   }
+
+  return messages;
+}
 }
 
 // ============================================
