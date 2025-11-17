@@ -2664,7 +2664,122 @@ input:disabled + .toggle-slider {
 .message.assistant .tool-indicator {
   animation: pulse 2s infinite;
 }
+/* Стили для управления пресетами */
+.preset-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
 
+.preset-controls select {
+    flex: 1;
+}
+
+#managePresetsBtn {
+    padding: 8px 12px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#managePresetsBtn:hover {
+    background: var(--hover-color);
+}
+
+.preset-form {
+    padding: 20px;
+    background: var(--surface-color);
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+.preset-form h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+}
+
+.preset-input {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--background-color);
+    color: var(--text-primary);
+}
+
+.preset-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--background-color);
+    color: var(--text-primary);
+    resize: vertical;
+}
+
+.presets-list {
+    padding: 20px;
+}
+
+.presets-list h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: var(--text-primary);
+}
+
+.preset-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 8px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.preset-item-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.preset-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.preset-item-actions button {
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.preset-item-actions button:hover {
+    background: var(--hover-color);
+}
+
+.preset-item-actions .delete-btn:hover {
+    background: #fee;
+    border-color: #f00;
+    color: #f00;
+}
+
+#customPresetsList:empty::after {
+    content: 'Нет пользовательских пресетов';
+    display: block;
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+}
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
