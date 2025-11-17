@@ -536,9 +536,9 @@ class AIService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss',
-          'HTTP-Referer': "https://nextor001.github.io/app/",
           'X-Title': 'AI Assistant',
-          "referer": "https://nextor001.github.io/app/"
+          "referer": "https://www.perplexity.ai/account/api/playground/search",
+          "origin": "https://www.perplexity.ai"
         },
         body: JSON.stringify(requestBody),
       });
