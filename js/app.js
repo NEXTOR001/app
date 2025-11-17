@@ -519,37 +519,37 @@ class MarkdownRenderer {
 
 class AIService {
   // Определение инструмента поиска
-  static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, search_domain_filter = []) {
-    const searchQuery = Array.isArray(query) ? query.join(' ') : query;
-    const url = 'https://api.perplexity.ai/search';
+static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, search_domain_filter = []) {
+  const searchQuery = Array.isArray(query) ? query.join(' ') : query;
+  
+  // Используем публичный CORS прокси (только для разработки!)
+  const proxyUrl = 'https://api.allorigins.win/raw?url=';
+  const targetUrl = encodeURIComponent('https://api.perplexity.ai/search');
+  
+  const requestBody = {
+    query: searchQuery,
+    max_tokens_per_page: max_tokens_per_page,
+    max_results: max_results,
+    search_domain_filter: search_domain_filter
+  };
 
-    const requestBody = {
-      "query": searchQuery, 
-      "max_tokens_per_page": max_tokens_per_page,
-      "max_results": max_results, 
-      "search_domain_filter": search_domain_filter
-    };
+  try {
+    const response = await fetch(proxyUrl + targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss'
+      },
+      body: JSON.stringify(requestBody)
+    });
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss',
-          'X-Title': 'AI Assistant',
-          "referer": "https://www.perplexity.ai/account/api/playground/search",
-          "origin": "https://www.perplexity.ai"
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      const data = await response.json();
-      return data.results || data;
-    } catch (error) {
-      console.error('Web search error:', error);
-      return { error: error.message };
-    }
+    const data = await response.json();
+    return data.results || data;
+  } catch (error) {
+    console.error('Web search error:', error);
+    return { error: error.message };
   }
+}
 
   // Маппинг доступных инструментов
   static TOOL_MAPPING = {
