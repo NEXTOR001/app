@@ -549,21 +549,101 @@ class MarkdownRenderer {
 // API CALLING WITH IMPROVED STREAMING
 // ============================================
 
+
 class AIService {
+  // Определение инструмента поиска
+  static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, search_domain_filter = []) {
+    const searchQuery = Array.isArray(query) ? query.join(' ') : query;
+    const url = 'https://api.perplexity.ai/search';
+
+    const requestBody = {
+      "query": searchQuery, 
+      "max_tokens_per_page": max_tokens_per_page,
+      "max_results": max_results, 
+      "search_domain_filter": search_domain_filter
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss',
+          'HTTP-Referer': "https://nextor001.github.io/app/",
+          'X-Title': 'AI Assistant',
+          "referer": "https://nextor001.github.io/app/"
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      return data.results || data;
+    } catch (error) {
+      console.error('Web search error:', error);
+      return { error: error.message };
+    }
+  }
+
+  // Маппинг доступных инструментов
+  static TOOL_MAPPING = {
+    'search_in_web': this.search_in_web
+  };
+
+  // Определение схемы инструментов для OpenRouter
+  static getToolsDefinition() {
+    return [{
+      "type": "function",
+      "function": {
+        "name": "search_in_web",
+        "description": "Поиск во всём интернете и получение результатов. Используй если пользователь запрашивает поиск или информация требует поиска (она слишком новая и неизвестная тебе, или иное)",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Запрос или несколько запросов поиска"
+            },
+            "max_tokens_per_page": {
+              "type": "integer",
+              "description": "Максимум извлеченных токенов с каждой страницы. Диапазон от 512 до 2048. По умолчанию 1024",
+              "default": 1024
+            },
+            "max_results": {
+              "type": "integer",
+              "description": "Максимум страниц для каждого запроса. Диапазон от 5 до 20. По умолчанию 10",
+              "default": 10
+            },
+            "search_domain_filter": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Домены для поиска по специфичным источникам. Максимум 20",
+              "default": []
+            }
+          },
+          "required": ["query"]
+        }
+      }
+    }];
+  }
+
   static async call(message, files = [], onChunk = null, streamingElement = null) {
     const { apiKey, apiUrl } = ApiConfig.get();
 
     if (!apiKey) {
       throw new Error('API ключ не найден. Пожалуйста, перезагрузите страницу.');
     }
-
     const selectedModel = document.getElementById('modelSelect').value;
     const model = MODELS[selectedModel];
-
+    
     if (!model) {
       throw new Error('Модель не найдена');
     }
-
     // Cancel any ongoing stream
     if (state.currentStreamController) {
       state.currentStreamController.abort();
@@ -576,23 +656,20 @@ class AIService {
       model: selectedModel,
       messages,
       stream: true,
-      max_tokens: state.settings.maxTokens || model.maxTokens || 2048
+      max_tokens: state.settings.maxTokens || model.maxTokens || 2048,
+      // Добавляем инструменты, если модель их поддерживает
+      tools: this.getToolsDefinition()
     };
+
     if (!model.unsupported_params || !model.unsupported_params.includes('top_p')) {
       requestBody.top_p = state.settings.topP;
     }
     if (!model.unsupported_params || !model.unsupported_params.includes('temperature')) {
       requestBody.temperature = state.settings.temperature;
     }
-    
 
     if (model.supportReasoning) {
-      requestBody.reasoning = {effort:"high"}
-    }
-    // Add webSearch parameter if model supports it and it's enabled
-    if (model.supportWebSearch && state.settings.webSearch) {
-      requestBody.plugins = [{ id: 'web' }];
-      requestBody.web_search_options = {search_context_size:"high"}
+      requestBody.reasoning = { effort: "high" };
     }
 
     const response = await fetch(`${apiUrl}/chat/completions`, {
@@ -618,15 +695,17 @@ class AIService {
     
     state.currentStreamingRenderer = streamingRenderer;
 
-    return this.processStream(response, onChunk, model, streamingRenderer);
+    return this.processStream(response, onChunk, model, streamingRenderer, messages);
   }
 
-    static async processStream(response, onChunk, model, streamingRenderer) {
+  static async processStream(response, onChunk, model, streamingRenderer, messages) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let totalContent = '';
     let buffer = '';
-    let images = []; // Добавляем массив для изображений
+    let images = [];
+    let toolCalls = [];
+    let currentToolCall = null;
 
     try {
       while (true) {
@@ -657,6 +736,37 @@ class AIService {
                 onChunk?.({ content: chunk, totalContent });
               }
 
+              // Обработка tool_calls в потоке
+              if (data.choices?.[0]?.delta?.tool_calls) {
+                const deltaToolCalls = data.choices[0].delta.tool_calls;
+                
+                for (const deltaToolCall of deltaToolCalls) {
+                  const index = deltaToolCall.index;
+                  
+                  // Инициализация нового tool call
+                  if (!toolCalls[index]) {
+                    toolCalls[index] = {
+                      id: deltaToolCall.id || `call_${Date.now()}_${index}`,
+                      type: deltaToolCall.type || 'function',
+                      function: {
+                        name: '',
+                        arguments: ''
+                      }
+                    };
+                  }
+                  
+                  // Обновление tool call
+                  if (deltaToolCall.function?.name) {
+                    toolCalls[index].function.name += deltaToolCall.function.name;
+                  }
+                  if (deltaToolCall.function?.arguments) {
+                    toolCalls[index].function.arguments += deltaToolCall.function.arguments;
+                  }
+                }
+                
+                onChunk?.({ toolCalls: toolCalls });
+              }
+
               // Обработка изображений
               if (data.choices?.[0]?.delta?.images) {
                 const deltaImages = data.choices[0].delta.images;
@@ -673,19 +783,41 @@ class AIService {
                 onChunk?.({ images: deltaImages, totalImages: images });
               }
 
-              // Handle finish reason and usage
-              if (data.choices?.[0]?.finish_reason === 'stop') {
-                if (streamingRenderer) {
-                  streamingRenderer.finalize();
-                }
+              // Handle finish reason
+              if (data.choices?.[0]?.finish_reason) {
+                const finishReason = data.choices[0].finish_reason;
                 
-                if (data.usage) {
-                  const usage = this.calculateUsage(data, model);
-                  onChunk?.({ usage, finished: true, finalImages: images });
+                if (finishReason === 'tool_calls' && toolCalls.length > 0) {
+                  // Модель запросила вызов инструментов
+                  if (streamingRenderer) {
+                    streamingRenderer.finalize();
+                  }
+                  
+                  // Выполнить инструменты и продолжить диалог
+                  const toolResults = await this.executeToolCalls(toolCalls, messages, totalContent);
+                  onChunk?.({ toolCallsCompleted: true, toolResults });
+                  
+                  return { 
+                    content: totalContent, 
+                    images: images, 
+                    toolCalls: toolCalls,
+                    toolResults: toolResults,
+                    needsContinuation: true 
+                  };
+                  
+                } else if (finishReason === 'stop') {
+                  if (streamingRenderer) {
+                    streamingRenderer.finalize();
+                  }
+                  
+                  if (data.usage) {
+                    const usage = this.calculateUsage(data, model);
+                    onChunk?.({ usage, finished: true, finalImages: images });
+                  }
                 }
               }
             } catch (e) {
-              console.warn('Failed to parse stream line:', line);
+              console.warn('Failed to parse stream line:', line, e);
             }
           }
         }
@@ -701,7 +833,58 @@ class AIService {
       state.currentStreamingRenderer = null;
     }
 
-    return { content: totalContent, images: images, usage: null };
+    return { content: totalContent, images: images, toolCalls: toolCalls, usage: null };
+  }
+
+  // Выполнение вызовов инструментов
+  static async executeToolCalls(toolCalls, messages, assistantContent) {
+    const toolResults = [];
+    
+    // Добавляем сообщение ассистента с tool_calls
+    messages.push({
+      role: 'assistant',
+      content: assistantContent || null,
+      tool_calls: toolCalls
+    });
+    
+    // Выполняем каждый вызов инструмента
+    for (const toolCall of toolCalls) {
+      const toolName = toolCall.function.name;
+      const toolArgs = JSON.parse(toolCall.function.arguments);
+      
+      console.log(`Executing tool: ${toolName}`, toolArgs);
+      
+      try {
+        const toolFunction = this.TOOL_MAPPING[toolName];
+        if (!toolFunction) {
+          throw new Error(`Unknown tool: ${toolName}`);
+        }
+        
+        const result = await toolFunction.call(this, ...Object.values(toolArgs));
+        
+        // Добавляем результат в сообщения
+        const toolMessage = {
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify(result)
+        };
+        
+        messages.push(toolMessage);
+        toolResults.push({ toolCall, result });
+        
+      } catch (error) {
+        console.error(`Error executing tool ${toolName}:`, error);
+        const errorMessage = {
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({ error: error.message })
+        };
+        messages.push(errorMessage);
+        toolResults.push({ toolCall, error: error.message });
+      }
+    }
+    
+    return toolResults;
   }
 
   static calculateUsage(response, model) {
@@ -722,7 +905,7 @@ class AIService {
     return usage;
   }
 
-static buildMessages(message, files) {
+  static buildMessages(message, files) {
   const messages = [];
 
   messages.push({
@@ -730,29 +913,45 @@ static buildMessages(message, files) {
     content: state.settings.systemPrompt
   });
 
-  // Add message history
-  for (let i = 0; i < state.messages.length - 1; i++) {
+  // Добавляем историю сообщений, исключая последнее сообщение ассистента (которое сейчас заполняется)
+  // и последнее сообщение пользователя (если оно уже добавлено)
+  let historyLength = state.messages.length;
+  
+  // Если последнее сообщение - пустое сообщение ассистента (которое сейчас заполняется)
+  if (historyLength > 0 && state.messages[historyLength - 1].role === 'assistant' && 
+      state.messages[historyLength - 1].isStreaming) {
+    historyLength = historyLength - 1;
+  }
+  
+  // Проверяем, является ли предпоследнее сообщение текущим сообщением пользователя
+  let skipCurrentUserMessage = false;
+  if (historyLength > 0 && state.messages[historyLength - 1].role === 'user') {
+    const lastUserMessage = state.messages[historyLength - 1];
+    // Если содержимое совпадает с текущим message, пропускаем его добавление в конце
+    if (lastUserMessage.content === message) {
+      skipCurrentUserMessage = true;
+    }
+  }
+
+  // Добавляем историю сообщений
+  for (let i = 0; i < historyLength; i++) {
     const msg = state.messages[i];
 
     if (msg.role === 'user') {
-      // Проверяем, есть ли изображения в файлах
       const hasImages = msg.files?.some(file => file.type === 'image');
       
       if (hasImages) {
-        // Формируем контент с изображениями
         const content = [];
         
-        // Добавляем текст сообщения
         if (msg.content) {
           content.push({ type: 'text', text: msg.content });
         }
         
-        // Добавляем текстовые файлы к тексту
         const textFiles = msg.files.filter(file => file.type === 'text');
         if (textFiles.length) {
           let additionalText = '';
           textFiles.forEach(file => {
-            additionalText += `\n\n[File: ${file.name}]\n${file.content}`;
+            additionalText += `\n\n[File: <!--MATH_INLINE_0-->{file.content}`;
           });
           if (additionalText) {
             content[0] = { 
@@ -762,7 +961,6 @@ static buildMessages(message, files) {
           }
         }
         
-        // Добавляем изображения
         msg.files.forEach(file => {
           if (file.type === 'image') {
             content.push({
@@ -777,13 +975,12 @@ static buildMessages(message, files) {
           content: content
         });
       } else {
-        // Если нет изображений, обрабатываем как обычно
         let content = msg.content || '';
         
         if (msg.files?.length) {
           msg.files.forEach(file => {
             if (file.type === 'text') {
-              content += `\n\n[File: ${file.name}]\n${file.content}`;
+              content += `\n\n[File: <!--MATH_INLINE_1-->{file.content}`;
             }
           });
         }
@@ -793,75 +990,86 @@ static buildMessages(message, files) {
           content: content
         });
       }
-    } else if (msg.role === 'assistant' && msg.content) {
-      messages.push({
+    } else if (msg.role === 'assistant') {
+      const assistantMsg = {
         role: 'assistant',
+        content: msg.content || null
+      };
+      
+      if (msg.tool_calls) {
+        assistantMsg.tool_calls = msg.tool_calls;
+      }
+      
+      messages.push(assistantMsg);
+      
+    } else if (msg.role === 'tool') {
+      messages.push({
+        role: 'tool',
+        tool_call_id: msg.tool_call_id,
         content: msg.content
       });
     }
   }
 
-  // Добавляем текущее сообщение с прикрепленными файлами
-  const hasCurrentImages = files?.some(file => file.type === 'image');
-  
-  if (hasCurrentImages) {
-    const content = [];
+  // Добавляем текущее сообщение только если оно еще не было добавлено
+  if (!skipCurrentUserMessage && (message || files?.length)) {
+    const hasCurrentImages = files?.some(file => file.type === 'image');
     
-    // Добавляем текст сообщения
-    if (message) {
-      content.push({ type: 'text', text: message });
-    }
-    
-    // Добавляем текстовые файлы
-    const textFiles = files.filter(file => file.type === 'text');
-    if (textFiles.length) {
-      let additionalText = '';
-      textFiles.forEach(file => {
-        additionalText += `\n\n[File: ${file.name}]\n${file.content}`;
-      });
-      if (additionalText) {
-        if (content.length > 0) {
-          content[0] = { 
-            type: 'text', 
-            text: content[0].text + additionalText 
-          };
-        } else {
-          content.push({ type: 'text', text: additionalText });
-        }
+    if (hasCurrentImages) {
+      const content = [];
+      
+      if (message) {
+        content.push({ type: 'text', text: message });
       }
-    }
-    
-    // Добавляем изображения
-    files.forEach(file => {
-      if (file.type === 'image') {
-        content.push({
-          type: 'image_url',
-          image_url: { url: file.data }
+      
+      const textFiles = files.filter(file => file.type === 'text');
+      if (textFiles.length) {
+        let additionalText = '';
+        textFiles.forEach(file => {
+          additionalText += `\n\n[File: <!--MATH_INLINE_2-->{file.content}`;
         });
+        if (additionalText) {
+          if (content.length > 0) {
+            content[0] = { 
+              type: 'text', 
+              text: content[0].text + additionalText 
+            };
+          } else {
+            content.push({ type: 'text', text: additionalText });
+          }
+        }
       }
-    });
-    
-    messages.push({
-      role: 'user',
-      content: content
-    });
-  } else if (message || files?.length) {
-    // Если нет изображений, обрабатываем как текстовое сообщение
-    let content = message || '';
-    
-    if (files?.length) {
+      
       files.forEach(file => {
-        if (file.type === 'text') {
-          content += `\n\n[File: ${file.name}]\n${file.content}`;
+        if (file.type === 'image') {
+          content.push({
+            type: 'image_url',
+            image_url: { url: file.data }
+          });
         }
       });
-    }
-    
-    if (content) {
+      
       messages.push({
         role: 'user',
         content: content
       });
+    } else if (message || files?.length) {
+      let content = message || '';
+      
+      if (files?.length) {
+        files.forEach(file => {
+          if (file.type === 'text') {
+            content += `\n\n[File: <!--MATH_INLINE_3-->{file.content}`;
+          }
+        });
+      }
+      
+      if (content) {
+        messages.push({
+          role: 'user',
+          content: content
+        });
+      }
     }
   }
 
@@ -1159,11 +1367,9 @@ class ChatManager {
     let message = editedMessage || messageInput.value.trim();
 
     if (regenerate) {
-      // Remove last assistant message for regeneration
       if (state.messages.length > 0 && state.messages[state.messages.length - 1].role === 'assistant') {
         state.messages.pop();
       }
-      // Get last user message
       const lastUserMessage = state.messages.filter(m => m.role === 'user').pop();
       if (lastUserMessage) {
         message = lastUserMessage.content;
@@ -1192,10 +1398,14 @@ class ChatManager {
       state.attachedFiles = [];
     }
 
+    await this.processAIResponse(message);
+  }
+
+  static async processAIResponse(message) {
     const assistantMessage = {
       role: 'assistant',
       content: '',
-      images: [], // Добавляем массив для изображений
+      images: [],
       timestamp: new Date().toISOString(),
       isStreaming: true
     };
@@ -1203,7 +1413,6 @@ class ChatManager {
     state.messages.push(assistantMessage);
     const assistantIndex = state.messages.length - 1;
 
-    // Create streaming message element
     const container = document.getElementById('messagesContainer');
     const messageElement = UIManager.createStreamingMessageElement(assistantMessage, assistantIndex);
     
@@ -1213,29 +1422,33 @@ class ChatManager {
     const contentDiv = messageElement.querySelector('.message-text');
     
     try {
-      await AIService.call(message, state.attachedFiles, (chunk) => {
+      const result = await AIService.call(message, state.attachedFiles, (chunk) => {
         if (chunk.content) {
           state.messages[assistantIndex].content += chunk.content;
         }
         
-        // Обработка изображений
         if (chunk.images) {
           chunk.images.forEach(img => {
             if (img.image_url?.url) {
               state.messages[assistantIndex].images.push(img.image_url.url);
               
-              // Добавляем изображение в UI сразу
               const imagesContainer = messageElement.querySelector('.message-images') || 
                                      UIManager.createImagesContainer(messageElement);
               UIManager.addImageToContainer(imagesContainer, img.image_url.url);
             }
           });
         }
+
+        // Отображение использования инструментов
+        if (chunk.toolCalls) {
+          const toolIndicator = messageElement.querySelector('.tool-indicator') ||
+                               UIManager.createToolIndicator(messageElement);
+          UIManager.updateToolIndicator(toolIndicator, chunk.toolCalls);
+        }
         
         if (chunk.finished) {
           state.messages[assistantIndex].isStreaming = false;
           
-          // Сохраняем финальные изображения
           if (chunk.finalImages) {
             state.messages[assistantIndex].images = chunk.finalImages.map(img => img.url);
           }
@@ -1247,6 +1460,31 @@ class ChatManager {
           messageElement.querySelector('.message-content').appendChild(usageDiv);
         }
       }, contentDiv);
+
+      // Проверяем, нужно ли продолжить диалог после выполнения инструментов
+      if (result.needsContinuation && result.toolResults) {
+        // Сохраняем tool_calls в сообщении ассистента
+        state.messages[assistantIndex].tool_calls = result.toolCalls;
+        state.messages[assistantIndex].isStreaming = false;
+        
+        // Добавляем сообщения с результатами инструментов
+        result.toolResults.forEach(({ toolCall, result: toolResult, error }) => {
+          state.messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: error ? JSON.stringify({ error }) : JSON.stringify(toolResult),
+            timestamp: new Date().toISOString()
+          });
+        });
+
+        // Удаляем текущий streaming элемент и перерисовываем
+        messageElement.remove();
+        UIManager.renderMessages();
+        
+        // Продолжаем диалог с результатами инструментов
+        await this.processAIResponse(null);
+        return;
+      }
 
       state.messages[assistantIndex].isStreaming = false;
       this.updateCurrent();
@@ -1262,6 +1500,8 @@ class ChatManager {
       UIManager.renderMessages();
     }
   }
+
+
 
   static editMessage(index) {
     const message = state.messages[index];
@@ -1307,7 +1547,22 @@ class UIManager {
     
     return imagesDiv;
   }
+    static createToolIndicator(messageElement) {
+    const indicator = document.createElement('div');
+    indicator.className = 'tool-indicator';
+    indicator.innerHTML = '<span class="tool-icon">🔧</span> Использую инструменты...';
+    
+    const contentDiv = messageElement.querySelector('.message-content');
+    const textDiv = messageElement.querySelector('.message-text');
+    contentDiv.insertBefore(indicator, textDiv);
+    
+    return indicator;
+  }
 
+  static updateToolIndicator(indicator, toolCalls) {
+    const toolNames = toolCalls.map(tc => tc.function.name).join(', ');
+    indicator.innerHTML = `<span class="tool-icon">🔧</span> Вызов: ${toolNames}`;
+  }
   static addImageToContainer(container, imageUrl) {
     const imageWrapper = document.createElement('div');
     imageWrapper.className = 'generated-image-wrapper';
