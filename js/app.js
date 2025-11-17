@@ -7,7 +7,8 @@ const STORAGE_KEYS = {
   API_URL: 'ai_assistant_api_url',
   CHATS: 'ai_assistant_chats',
   SETTINGS: 'ai_assistant_settings',
-  CURRENT_CHAT: 'ai_assistant_current_chat'
+  CURRENT_CHAT: 'ai_assistant_current_chat',
+  CUSTOM_PRESETS: 'ai_assistant_custom_presets'
 };
 
 const DEFAULT_CONFIG = {
@@ -221,7 +222,34 @@ class AppState {
     this.isProcessingPaste = false;
     this.currentStreamController = null;
     this.editingMessageIndex = null;
-    this.currentStreamingRenderer = null; // Track current streaming renderer
+    this.currentStreamingRenderer = null;
+    this.customPresets = {};
+  }
+  loadCustomPresets() {
+    const saved = localStorage.getItem(STORAGE_KEYS.CUSTOM_PRESETS);
+    if (saved) {
+      this.customPresets = JSON.parse(saved);
+    }
+  }
+
+  saveCustomPresets() {
+    localStorage.setItem(STORAGE_KEYS.CUSTOM_PRESETS, JSON.stringify(this.customPresets));
+  }
+
+  addCustomPreset(name, prompt) {
+    if (!name || !prompt) return false;
+    this.customPresets[name] = prompt;
+    this.saveCustomPresets();
+    return true;
+  }
+
+  deleteCustomPreset(name) {
+    if (this.customPresets[name]) {
+      delete this.customPresets[name];
+      this.saveCustomPresets();
+      return true;
+    }
+    return false;
   }
   cleanupStorage() {
   try {
@@ -293,15 +321,17 @@ class AppState {
     }
     }
 
-  load() {
+    load() {
     const chats = localStorage.getItem(STORAGE_KEYS.CHATS);
     const settings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
     const currentChat = localStorage.getItem(STORAGE_KEYS.CURRENT_CHAT);
-
+    
     if (chats) this.chats = JSON.parse(chats);
     if (settings) {
       this.settings = { ...this.settings, ...JSON.parse(settings) };
     }
+    
+    this.loadCustomPresets(); // Добавить загрузку пресетов
     
     if (currentChat) {
       this.currentChatId = currentChat;
@@ -746,7 +776,7 @@ class AIService {
     if (model.supportReasoning) {
       requestBody.reasoning = { effort: "high" };
     }
-    if (model.supportWebSearch) {
+    if (model.supportWebSearch & state.settings.webSearch==true) {
         requestBody.plugins = [{ "id": "web", "max_results": 40}]
     }
     const response = await fetch(`${apiUrl}/chat/completions`, {
@@ -1988,8 +2018,8 @@ class SettingsManager {
     const closeOverlay = document.getElementById('closeSettings');
     const saveBtn = document.getElementById('saveSettings');
 
-    // Add web search toggle HTML
-    this.addWebSearchToggle();
+    // Инициализация управления пресетами
+    this.initializePresets();
 
     settingsBtn.addEventListener('click', () => {
       modal.classList.add('active');
@@ -2013,37 +2043,228 @@ class SettingsManager {
         this.updateWebSearchAvailability();
       });
     }
-  } 
+  }
 
-  static addWebSearchToggle() {
-    const settingsContent = document.querySelector('.settings-content');
-    if (!settingsContent) return;
+  static initializePresets() {
+    const manageBtn = document.getElementById('managePresetsBtn');
+    const presetsModal = document.getElementById('presetsModal');
+    const closePresetsBtn = document.getElementById('closePresetsBtn');
+    const closePresetsOverlay = document.getElementById('closePresetsOverlay');
+    const addPresetBtn = document.getElementById('addPresetBtn');
+    const presetSelect = document.getElementById('systemPromptPreset');
+    const promptText = document.getElementById('systemPromptText');
 
-    // Check if web search toggle already exists
-    if (document.getElementById('webSearchToggle')) return;
+    // Открытие модального окна управления пресетами
+    if (manageBtn) {
+      manageBtn.addEventListener('click', () => {
+        presetsModal.classList.add('active');
+        this.renderCustomPresets();
+      });
+    }
 
-    const webSearchGroup = document.createElement('div');
-    webSearchGroup.className = 'settings-group';
-    webSearchGroup.innerHTML = `
-      <label class="settings-label">
-        <span>Web Search</span>
-        <span class="settings-hint">Разрешить модели искать информацию в интернете (если поддерживается)</span>
-      </label>
-      <div class="web-search-control">
-        <label class="toggle-switch">
-          <input type="checkbox" id="webSearchToggle">
-          <span class="toggle-slider"></span>
-        </label>
-        <span id="webSearchStatus" class="web-search-status">Выключено</span>
-      </div>
+    // Закрытие модального окна
+    if (closePresetsBtn) {
+      closePresetsBtn.addEventListener('click', () => {
+        presetsModal.classList.remove('active');
+      });
+    }
+    
+    if (closePresetsOverlay) {
+      closePresetsOverlay.addEventListener('click', () => {
+        presetsModal.classList.remove('active');
+      });
+    }
+
+    // Добавление нового пресета
+    if (addPresetBtn) {
+      addPresetBtn.addEventListener('click', () => {
+        const name = document.getElementById('newPresetName').value.trim();
+        const prompt = document.getElementById('newPresetPrompt').value.trim();
+        
+        if (name && prompt) {
+          if (state.addCustomPreset(name, prompt)) {
+            NotificationManager.success(`Пресет "${name}" добавлен`);
+            document.getElementById('newPresetName').value = '';
+            document.getElementById('newPresetPrompt').value = '';
+            this.renderCustomPresets();
+            this.updatePresetSelect();
+          } else {
+            NotificationManager.error('Ошибка при добавлении пресета');
+          }
+        } else {
+          NotificationManager.error('Заполните все поля');
+        }
+      });
+    }
+
+    // Обработка выбора пресета
+    if (presetSelect) {
+      presetSelect.addEventListener('change', () => {
+        const selected = presetSelect.value;
+        
+        if (selected === 'custom') {
+          promptText.disabled = false;
+        } else if (SYSTEM_PROMPTS[selected]) {
+          promptText.value = SYSTEM_PROMPTS[selected];
+          promptText.disabled = true;
+        } else if (state.customPresets && state.customPresets[selected]) {
+          promptText.value = state.customPresets[selected];
+          promptText.disabled = true;
+        }
+      });
+    }
+
+    // Обновляем список пресетов при инициализации
+    this.updatePresetSelect();
+  }
+
+  static initializeSliders() {
+    // Temperature slider
+    const tempSlider = document.getElementById('temperature');
+    const tempValue = document.getElementById('tempValue');
+    if (tempSlider && tempValue) {
+      tempSlider.addEventListener('input', () => {
+        tempValue.textContent = (tempSlider.value / 10).toFixed(1);
+      });
+    }
+
+    // Top-P slider
+    const topPSlider = document.getElementById('topP');
+    const topPValue = document.getElementById('topPValue');
+    if (topPSlider && topPValue) {
+      topPSlider.addEventListener('input', () => {
+        topPValue.textContent = (topPSlider.value / 100).toFixed(2);
+      });
+    }
+
+    // Max tokens slider
+    const maxTokensSlider = document.getElementById('maxTokens');
+    const maxTokensValue = document.getElementById('maxTokensValue');
+    if (maxTokensSlider && maxTokensValue) {
+      maxTokensSlider.addEventListener('input', () => {
+        maxTokensValue.textContent = maxTokensSlider.value;
+      });
+    }
+  }
+
+  static renderCustomPresets() {
+    const container = document.getElementById('customPresetsList');
+    if (!container) return;
+
+    container.innerHTML = '';
+    
+    if (state.customPresets && Object.keys(state.customPresets).length > 0) {
+      Object.entries(state.customPresets).forEach(([name, prompt]) => {
+        const item = document.createElement('div');
+        item.className = 'preset-item';
+        item.innerHTML = `
+          <div class="preset-item-info">
+            <div class="preset-item-name">${Utils.escapeHtml(name)}</div>
+          </div>
+          <div class="preset-item-actions">
+            <button onclick="SettingsManager.usePreset('${name.replace(/'/g, "\\'")}')">Использовать</button>
+            <button onclick="SettingsManager.editPreset('${name.replace(/'/g, "\\'")}')">Изменить</button>
+            <button class="delete-btn" onclick="SettingsManager.deletePreset('${name.replace(/'/g, "\\'")}')">Удалить</button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+  }
+
+  static updatePresetSelect() {
+    const select = document.getElementById('systemPromptPreset');
+    if (!select) return;
+
+    // Сохраняем текущее значение
+    const currentValue = select.value;
+    
+    // Очищаем и добавляем стандартные опции
+    select.innerHTML = `
+      <option value="default">По умолчанию</option>
+      <option value="creative">Креативный помощник</option>
+      <option value="technical">Технический эксперт</option>
+      <option value="tutor">Преподаватель</option>
     `;
+    
+    // Добавляем пользовательские пресеты
+    if (state.customPresets) {
+      Object.keys(state.customPresets).forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+      });
+    }
+    
+    // Добавляем опцию "Пользовательская"
+    const customOption = document.createElement('option');
+    customOption.value = 'custom';
+    customOption.textContent = 'Пользовательская';
+    select.appendChild(customOption);
+    
+    // Восстанавливаем значение если оно существует
+    if (select.querySelector(`option[value="${currentValue}"]`)) {
+      select.value = currentValue;
+    }
+  }
 
-    // Insert before system prompt group
-    const systemPromptGroup = settingsContent.querySelector('.settings-group:last-child');
-    if (systemPromptGroup) {
-      settingsContent.insertBefore(webSearchGroup, systemPromptGroup);
-    } else {
-      settingsContent.appendChild(webSearchGroup);
+  static usePreset(name) {
+    const select = document.getElementById('systemPromptPreset');
+    const promptText = document.getElementById('systemPromptText');
+    
+    if (state.customPresets && state.customPresets[name]) {
+      select.value = name;
+      promptText.value = state.customPresets[name];
+      promptText.disabled = true;
+      
+      // Закрываем модальное окно пресетов
+      const presetsModal = document.getElementById('presetsModal');
+      if (presetsModal) {
+        presetsModal.classList.remove('active');
+      }
+      NotificationManager.success(`Пресет "${name}" выбран`);
+    }
+  }
+
+  static editPreset(name) {
+    if (!state.customPresets) return;
+    const currentPrompt = state.customPresets[name];
+    if (!currentPrompt) return;
+
+    const newPrompt = prompt(`Редактировать пресет "${name}":`, currentPrompt);
+    if (newPrompt && newPrompt !== currentPrompt) {
+      state.customPresets[name] = newPrompt;
+      state.saveCustomPresets();
+      this.renderCustomPresets();
+      NotificationManager.success(`Пресет "${name}" обновлен`);
+      
+      // Обновляем текстовое поле если этот пресет выбран
+      const select = document.getElementById('systemPromptPreset');
+      const promptText = document.getElementById('systemPromptText');
+      if (select && promptText && select.value === name) {
+        promptText.value = newPrompt;
+      }
+    }
+  }
+
+  static deletePreset(name) {
+    if (confirm(`Удалить пресет "${name}"?`)) {
+      if (state.deleteCustomPreset(name)) {
+        this.renderCustomPresets();
+        this.updatePresetSelect();
+        NotificationManager.success(`Пресет "${name}" удален`);
+        
+        // Если удаленный пресет был выбран, переключаемся на default
+        const select = document.getElementById('systemPromptPreset');
+        if (select && select.value === name) {
+          select.value = 'default';
+          const promptText = document.getElementById('systemPromptText');
+          if (promptText) {
+            promptText.value = SYSTEM_PROMPTS.default;
+          }
+        }
+      }
     }
   }
 
@@ -2066,51 +2287,37 @@ class SettingsManager {
     }
   }
 
-  static initializeSliders() {
-    // Temperature slider
+  static loadToUI() {
     const tempSlider = document.getElementById('temperature');
     const tempValue = document.getElementById('tempValue');
-    tempSlider.addEventListener('input', () => {
-      tempValue.textContent = (tempSlider.value / 10).toFixed(1);
-    });
-
-    // Top-P slider
+    if (tempSlider && tempValue) {
+      tempSlider.value = state.settings.temperature * 10;
+      tempValue.textContent = state.settings.temperature.toFixed(1);
+    }
+    
     const topPSlider = document.getElementById('topP');
     const topPValue = document.getElementById('topPValue');
-    topPSlider.addEventListener('input', () => {
-      topPValue.textContent = (topPSlider.value / 100).toFixed(2);
-    });
-
-    // Max tokens slider
+    if (topPSlider && topPValue) {
+      topPSlider.value = state.settings.topP * 100;
+      topPValue.textContent = state.settings.topP.toFixed(2);
+    }
+    
     const maxTokensSlider = document.getElementById('maxTokens');
     const maxTokensValue = document.getElementById('maxTokensValue');
-    maxTokensSlider.addEventListener('input', () => {
-      maxTokensValue.textContent = maxTokensSlider.value;
-    });
-
-    // System prompt preset
+    if (maxTokensSlider && maxTokensValue) {
+      maxTokensSlider.value = state.settings.maxTokens || 16000;
+      maxTokensValue.textContent = state.settings.maxTokens || 16000;
+    }
+    
+    // Обновляем список пресетов и выбираем текущий
+    this.updatePresetSelect();
     const presetSelect = document.getElementById('systemPromptPreset');
     const promptText = document.getElementById('systemPromptText');
-    presetSelect.addEventListener('change', () => {
-      const preset = presetSelect.value;
-      if (preset !== 'custom') {
-        promptText.value = SYSTEM_PROMPTS[preset];
-        promptText.disabled = true;
-      } else {
-        promptText.disabled = false;
-      }
-    });
-  }
-
-  static loadToUI() {
-    document.getElementById('temperature').value = state.settings.temperature * 10;
-    document.getElementById('tempValue').textContent = state.settings.temperature.toFixed(1);
-    document.getElementById('topP').value = state.settings.topP * 100;
-    document.getElementById('topPValue').textContent = state.settings.topP.toFixed(2);
-    document.getElementById('maxTokens').value = state.settings.maxTokens || 2048;
-    document.getElementById('maxTokensValue').textContent = state.settings.maxTokens || 2048;
-    document.getElementById('systemPromptPreset').value = state.settings.systemPromptPreset;
-    document.getElementById('systemPromptText').value = state.settings.systemPrompt;
+    if (presetSelect && promptText) {
+      presetSelect.value = state.settings.systemPromptPreset || 'default';
+      promptText.value = state.settings.systemPrompt || SYSTEM_PROMPTS.default;
+      promptText.disabled = presetSelect.value !== 'custom';
+    }
     
     // Web search
     const webSearchToggle = document.getElementById('webSearchToggle');
@@ -2121,17 +2328,19 @@ class SettingsManager {
   }
 
   static save() {
-    state.settings.temperature = document.getElementById('temperature').value / 10;
-    state.settings.topP = document.getElementById('topP').value / 100;
-    state.settings.maxTokens = parseInt(document.getElementById('maxTokens').value);
-    state.settings.systemPrompt = document.getElementById('systemPromptText').value;
-    state.settings.systemPromptPreset = document.getElementById('systemPromptPreset').value;
-    
-    // Save web search setting
+    const tempSlider = document.getElementById('temperature');
+    const topPSlider = document.getElementById('topP');
+    const maxTokensSlider = document.getElementById('maxTokens');
+    const presetSelect = document.getElementById('systemPromptPreset');
+    const promptText = document.getElementById('systemPromptText');
     const webSearchToggle = document.getElementById('webSearchToggle');
-    if (webSearchToggle) {
-      state.settings.webSearch = webSearchToggle.checked;
-    }
+    
+    if (tempSlider) state.settings.temperature = tempSlider.value / 10;
+    if (topPSlider) state.settings.topP = topPSlider.value / 100;
+    if (maxTokensSlider) state.settings.maxTokens = parseInt(maxTokensSlider.value);
+    if (presetSelect) state.settings.systemPromptPreset = presetSelect.value;
+    if (promptText) state.settings.systemPrompt = promptText.value;
+    if (webSearchToggle) state.settings.webSearch = webSearchToggle.checked;
     
     state.save();
     NotificationManager.success('Настройки сохранены');
@@ -2154,7 +2363,7 @@ class ModelSelector {
       select.appendChild(option);
     });
 
-    select.value = 'openai/chatgpt-4o-latest';
+    select.value = 'google/gemini-2.5-pro';
     select.addEventListener('change', () => this.update());
     this.update();
   }
@@ -2347,7 +2556,7 @@ window.copyCode = function(button) {
 
 window.UIManager = UIManager;
 window.ChatManager = ChatManager;
-
+window.SettingsManager = SettingsManager;
 // ============================================
 // APPLICATION INITIALIZATION
 // ============================================
