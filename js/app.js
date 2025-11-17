@@ -95,9 +95,9 @@ const MODELS = {
     supportWebSearch: true,
     pricing: { input: 0.00014, output: 0.00028 }
   },
-    'perplexity/sonar-pro-search': {
+    'perplexity/sonar': {
     type: 'model',
-    displayName: 'Sonar PRO Search',
+    displayName: 'Sonar Search',
     maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
@@ -223,12 +223,75 @@ class AppState {
     this.editingMessageIndex = null;
     this.currentStreamingRenderer = null; // Track current streaming renderer
   }
-
-  save() {
-    localStorage.setItem(STORAGE_KEYS.CHATS, JSON.stringify(this.chats));
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
-    localStorage.setItem(STORAGE_KEYS.CURRENT_CHAT, this.currentChatId);
+  cleanupStorage() {
+  try {
+    // Удаляем файлы из сообщений перед сохранением
+    const cleanedChats = this.chats.map(chat => ({
+      ...chat,
+      messages: chat.messages.map(msg => {
+        const cleanMsg = { ...msg };
+        
+        // Удаляем тяжелые данные из файлов
+        if (cleanMsg.files) {
+          cleanMsg.files = cleanMsg.files.map(file => ({
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            sizeFormatted: file.sizeFormatted,
+            // НЕ сохраняем data и content
+          }));
+        }
+        
+        // Ограничиваем длину контента
+        if (cleanMsg.content && cleanMsg.content.length > 10000) {
+          cleanMsg.content = cleanMsg.content.substring(0, 10000) + '... [обрезано]';
+        }
+        
+        // Удаляем изображения из assistant сообщений
+        if (cleanMsg.images) {
+          delete cleanMsg.images;
+        }
+        
+        return cleanMsg;
+      })
+    }));
+    
+    return cleanedChats;
+  } catch (error) {
+    console.error('Cleanup error:', error);
+    return this.chats;
   }
+}
+
+
+    // Добавить метод удаления старых чатов
+    removeOldChats() {
+    if (this.chats.length > 10) {
+        // Оставляем только 10 последних чатов
+        this.chats = this.chats.slice(0, 10);
+        NotificationManager.show('Старые чаты удалены для освобождения места', 'info');
+    }
+    
+    // Ограничиваем количество сообщений в каждом чате
+    this.chats = this.chats.map(chat => ({
+        ...chat,
+        messages: chat.messages.slice(-50) // Оставляем только последние 50 сообщений
+    }));
+    }
+    save() {
+    try {
+        const cleanedChats = this.cleanupStorage();
+        localStorage.setItem(STORAGE_KEYS.CHATS, JSON.stringify(cleanedChats));
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(this.settings));
+        localStorage.setItem(STORAGE_KEYS.CURRENT_CHAT, this.currentChatId);
+    } catch (error) {
+        if (error.name === 'QuotaExceededError') {
+        // Если все еще превышена квота, удаляем старые чаты
+        this.removeOldChats();
+        this.save(); // Пробуем снова
+        }
+    }
+    }
 
   load() {
     const chats = localStorage.getItem(STORAGE_KEYS.CHATS);
@@ -2179,7 +2242,24 @@ class SetupScreen {
 
     menuBtn.addEventListener('click', () => sidebar.classList.toggle('active'));
     newChatBtn.addEventListener('click', () => ChatManager.create());
+    const clearCacheBtn = document.createElement('button');
+    clearCacheBtn.className = 'sidebar-btn clear-cache-btn';
+    clearCacheBtn.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+        <path d="M3 6H21M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M10 11V17M14 11V17M5 6H19L18 20C18 20.5304 17.7893 21.0391 17.4142 21.4142C17.0391 21.7893 16.5304 22 16 22H8C7.46957 22 6.96086 21.7893 6.58579 21.4142C6.21071 21.0391 6 20.5304 6 20L5 6Z" stroke="currentColor" stroke-width="2"/>
+    </svg>
+    Очистить кэш
+    `;
+    clearCacheBtn.onclick = () => {
+    if (confirm('Очистить кэш изображений и файлов? История чатов сохранится.')) {
+        state.cleanupStorage();
+        state.save();
+        NotificationManager.success('Кэш очищен');
+    }
+    };
 
+    // Добавить кнопку в сайдбар
+    document.querySelector('.sidebar-footer').appendChild(clearCacheBtn);
     if (changeApiKeyBtn) {
       changeApiKeyBtn.addEventListener('click', () => {
         if (confirm('Вы хотите изменить API ключ? Текущий ключ будет удален.')) {
