@@ -25,15 +25,6 @@ const MODELS = {
     supportReasoning: true,
     pricing: { input: 0.005, output: 0.015 }
   },
-  'openai/gpt-4.5-preview': {
-    type: 'model',
-    displayName: 'GPT-4.5 preview',
-    maxTokens: 16000,
-    supportStreaming: true,
-    supportWebSearch: true,
-    pricing: { input: 0.0005, output: 0.0015 }
-  },
-
 'google/gemini-2.5-flash-image-preview': {
     type: 'model',
     displayName: 'Nano Banana Image',
@@ -82,7 +73,7 @@ const MODELS = {
   'anthropic/claude-opus-4.1': {
     type: 'model',
     displayName: 'Claude Opus 4.1',
-    maxTokens: 16000,
+    maxTokens: 32000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -91,11 +82,35 @@ const MODELS = {
   'deepseek/deepseek-v3.2-exp': {
     type: 'model',
     displayName: 'DeepSeek v3.2-exp',
-    maxTokens: 16000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     pricing: { input: 0.00014, output: 0.00028 }
-  }
+  },
+    'perplexity/sonar-reasoning-pro': {
+    type: 'model',
+    displayName: 'Sonar PRO Search reasoning',
+    maxTokens: 64000,
+    supportStreaming: true,
+    supportWebSearch: true,
+    pricing: { input: 0.00014, output: 0.00028 }
+  },
+    'perplexity/sonar-pro-search': {
+    type: 'model',
+    displayName: 'Sonar PRO Search',
+    maxTokens: 64000,
+    supportStreaming: true,
+    supportWebSearch: true,
+    pricing: { input: 0.00014, output: 0.00028 }
+  },
+    'perplexity/sonar-deep-research': {
+    type: 'model',
+    displayName: 'Sonar DeepSearch',
+    maxTokens: 64000,
+    supportStreaming: true,
+    supportWebSearch: true,
+    pricing: { input: 0.00014, output: 0.00028 }
+  },
 };
 
 const SYSTEM_PROMPTS = {
@@ -519,27 +534,50 @@ class MarkdownRenderer {
 
 class AIService {
   // Определение инструмента поиска
-static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, search_domain_filter = []) {
+    static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, search_domain_filter = []) {
   const searchQuery = Array.isArray(query) ? query.join(' ') : query;
   
-  // Используем публичный CORS прокси (только для разработки!)
-  const proxyUrl = 'https://api.allorigins.win/raw?url=';
-  const targetUrl = encodeURIComponent('https://api.perplexity.ai/search');
+  const targetUrl = 'https://api.ydc-index.io/v1/search';
   
   const requestBody = {
     query: searchQuery,
-    max_tokens_per_page: max_tokens_per_page,
-    max_results: max_results,
-    search_domain_filter: search_domain_filter
+    count: max_results,
   };
 
   try {
-    const response = await fetch(proxyUrl + targetUrl, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss'
-      },
+        "X-API-Key": 'Bearer ydc-sk-c0f9e3a8e9bd04f7-OFJ2srerF4L95oMZa937KETP7x2rvJt4-5c24f01e<__>1SNpWKETU8N2v5f4OX2Z9YIZ',
+        'Content-Type': 'application/json'
+    },
+      body: JSON.stringify(requestBody)
+    });
+
+    const data = await response.json();
+    return data.results || data;
+  } catch (error) {
+    console.error('Web search error:', error);
+    return { error: error.message };
+  }
+}
+    static async extract_contents(urls = []) {
+
+  const targetUrl = 'https://api.ydc-index.io/v1/contents';
+  
+  const requestBody = {
+    urls: searchQuery,
+    count: max_results,
+    format: "markdown"
+  };
+
+  try {
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        "X-API-Key": 'Bearer ydc-sk-c0f9e3a8e9bd04f7-OFJ2srerF4L95oMZa937KETP7x2rvJt4-5c24f01e<__>1SNpWKETU8N2v5f4OX2Z9YIZ',
+        'Content-Type': 'application/json'
+    },
       body: JSON.stringify(requestBody)
     });
 
@@ -553,7 +591,8 @@ static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, 
 
   // Маппинг доступных инструментов
   static TOOL_MAPPING = {
-    'search_in_web': this.search_in_web
+    'search_in_web': this.search_in_web,
+    'extract_contents': this.extract_contents
   };
 
   // Определение схемы инструментов для OpenRouter
@@ -573,29 +612,37 @@ static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, 
               },
               "description": "Запрос или несколько запросов поиска"
             },
-            "max_tokens_per_page": {
-              "type": "integer",
-              "description": "Максимум извлеченных токенов с каждой страницы. Диапазон от 512 до 2048. По умолчанию 1024",
-              "default": 1024
-            },
             "max_results": {
               "type": "integer",
-              "description": "Максимум страниц для каждого запроса. Диапазон от 5 до 20. По умолчанию 10",
-              "default": 10
+              "description": "Максимум страниц для каждого запроса. Диапазон от 5 до 100. По умолчанию 10",
+              "default": 30
             },
-            "search_domain_filter": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Домены для поиска по специфичным источникам. Максимум 20",
-              "default": []
-            }
           },
           "required": ["query"]
         }
       }
-    }];
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "extract_contents",
+        "description": "Извлечение html или markdown из ссылок",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "urls": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "ссылка или несколько списком"
+            },
+          },
+          "required": ["urls"]
+        }
+      }
+    }, 
+];
   }
 
   static async call(message, files = [], onChunk = null, streamingElement = null) {
@@ -624,7 +671,6 @@ static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, 
       stream: true,
       max_tokens: state.settings.maxTokens || model.maxTokens || 2048,
       // Добавляем инструменты, если модель их поддерживает
-      tools: this.getToolsDefinition()
     };
 
     if (!model.unsupported_params || !model.unsupported_params.includes('top_p')) {
@@ -637,7 +683,9 @@ static async search_in_web(query, max_tokens_per_page = 1024, max_results = 10, 
     if (model.supportReasoning) {
       requestBody.reasoning = { effort: "high" };
     }
-
+    if (model.supportWebSearch) {
+        requestBody.plugins = [{ "id": "web", "max_results": 40}]
+    }
     const response = await fetch(`${apiUrl}/chat/completions`, {
       method: 'POST',
       headers: {
