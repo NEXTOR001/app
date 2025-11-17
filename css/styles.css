@@ -2645,7 +2645,30 @@ input:disabled + .toggle-slider {
     border: 2px solid white;
     animation: typing-indicator 1.5s infinite;
 }
+.tool-indicator {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9em;
+  margin-bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 
+.tool-icon {
+  font-size: 1.2em;
+}
+
+.message.assistant .tool-indicator {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
 @keyframes typing-indicator {
     0%, 100% {
         transform: scale(1);
