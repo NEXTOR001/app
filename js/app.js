@@ -19,7 +19,7 @@ const MODELS = {
   'openai/gpt-5.1': {
     type: 'model',
     displayName: 'GPT-5.1',
-    maxTokens: 32000,
+    maxTokens: 64000,
     supportStreaming: true,
     supportWebSearch: true,
     supportReasoning: true,
@@ -33,16 +33,8 @@ const MODELS = {
     supportWebSearch: true,
     pricing: { input: 0.0005, output: 0.0015 }
   },
-  'openai/gpt-5-image': {
-    type: 'model',
-    displayName: 'GPT-5 Image',
-    maxTokens: 16000,
-    supportStreaming: false,
-    supportWebSearch: false,
-    unsupported_params: ['temperature', 'top_p'],
-    pricing: { input: 0.0005, output: 0.0015 }
-  },
-    'google/gemini-2.5-flash-image-preview': {
+
+'google/gemini-2.5-flash-image-preview': {
     type: 'model',
     displayName: 'Nano Banana Image',
     maxTokens: 16000,
@@ -50,23 +42,6 @@ const MODELS = {
     supportWebSearch: false,
     unsupported_params: ['temperature', 'top_p'],
     pricing: { input: 0.0005, output: 0.0015 }
-  },
-  'openai/chatgpt-4o-latest': {
-    type: 'model',
-    displayName: 'chatgpt-4o-latest',
-    maxTokens: 16000,
-    supportStreaming: true,
-    supportWebSearch: true,
-    supportReasoning: true,
-    pricing: { input: 0.003, output: 0.015 }
-  },
-  'openrouter/polaris-alpha': {
-    type: 'model',
-    displayName: 'GPT-5.1 Beta',
-    maxTokens: 16000,
-    supportStreaming: true,
-    supportWebSearch: true,
-    pricing: { input: 0.015, output: 0.075 }
   },
   'google/gemini-2.5-pro': {
     type: 'model',
@@ -112,14 +87,6 @@ const MODELS = {
     supportWebSearch: true,
     supportReasoning: true,
     pricing: { input: 0.0008, output: 0.0024 }
-  },
-  'nousresearch/hermes-3-llama-3.1-70b': {
-    type: 'model',
-    displayName: 'nousresearch',
-    maxTokens: 16000,
-    supportStreaming: true,
-    supportWebSearch: true,
-    pricing: { input: 0.00024, output: 0.00024 }
   },
   'deepseek/deepseek-v3.2-exp': {
     type: 'model',
@@ -566,7 +533,6 @@ class AIService {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        mode: 'no-cors',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer pplx-xvjPbip99TcHjX45VFLm3HuKjZf3t3SbXANGEf1Y54xJIIVkss',
