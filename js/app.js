@@ -26,12 +26,12 @@ const MODELS = {
     supportReasoning: true,
     pricing: { input: 0.005, output: 0.015 }
   },
-'google/gemini-2.5-flash-image-preview': {
+'google/gemini-3-pro-preview': {
     type: 'model',
-    displayName: 'Nano Banana Image',
-    maxTokens: 16000,
-    supportStreaming: false,
-    supportWebSearch: false,
+    displayName: 'Gemini 3 Pro',
+    maxTokens: 64000,
+    supportStreaming: true,
+    supportWebSearch: true,
     unsupported_params: ['temperature', 'top_p'],
     pricing: { input: 0.0005, output: 0.0015 }
   },
